@@ -1,0 +1,186 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(uuid())
+  supabaseId String?  @unique @map("supabase_id")
+  email      String   @unique
+  name       String?
+  role       String   @default("worker") // worker, admin
+  pin        String? // PIN for worker login (4 digits)
+  hourlyRate Float?   @default(35) @map("hourly_rate") // Hourly rate for salary calculation
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  createdVehicles     Vehicle[]     @relation("VehicleCreatedBy")
+  updatedVehicles     Vehicle[]     @relation("VehicleUpdatedBy")
+  createdUsers        User[]        @relation("UserCreatedBy")
+  updatedUsers        User[]        @relation("UserUpdatedBy")
+  createdBy           User?         @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById         String?       @map("created_by_id")
+  updatedBy           User?         @relation("UserUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById         String?       @map("updated_by_id")
+  auditLogs           AuditLog[]
+  timeLogs            TimeLog[]
+  workSessions        WorkSession[]
+  createdInvoices     Invoice[]
+  createdExpenses     Expense[]
+  createdAppointments Appointment[]
+
+  @@map("users")
+}
+
+model Vehicle {
+  id               String        @id @default(uuid())
+  vin              String        @unique
+  brand            String? // Make/Manufacturer
+  model            String?
+  year             Int?
+  trim             String? // Trim level (e.g., "XLE Auto (Natl)")
+  style            String? // Style (e.g., "2.5, 4 Cylinder Engine")
+  bodyType         String?       @map("body_type") // Body type (e.g., "Sedan/Saloon")
+  engine           String? // Engine description
+  transmission     String? // Transmission type (e.g., "Automatic")
+  drive            String? // Drivetrain (e.g., "Front Wheel Drive")
+  manufacturer     String? // Full manufacturer name
+  origin           String? // Country of origin
+  licensePlate     String?       @map("license_plate")
+  workDescription  String?       @map("work_description") // What work needs to be done
+  serviceType      String?       @map("service_type") // small_service, big_service, repair, inspection, etc.
+  color            String? // Vehicle color
+  mileage          Int? // Current mileage
+  photoUrl         String?       @map("photo_url") // URL to vehicle photo
+  documentPhotoUrl String?       @map("document_photo_url") // URL to Fahrzeugausweis photo
+  isActive         Boolean       @default(true) @map("is_active")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  createdBy        User?         @relation("VehicleCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById      String?       @map("created_by_id")
+  updatedBy        User?         @relation("VehicleUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById      String?       @map("updated_by_id")
+  timeLogs         TimeLog[]
+  invoices         Invoice[]
+  expenses         Expense[]
+  appointments     Appointment[]
+
+  @@map("vehicles")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  action     String // CREATE, UPDATE, DELETE
+  entityType String   @map("entity_type") // vehicle, user, etc
+  entityId   String   @map("entity_id")
+  changes    Json? // What changed
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId     String?  @map("user_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+model TimeLog {
+  id        String    @id @default(uuid())
+  hours     Float // Hours worked
+  startTime DateTime? @map("start_time") // Optional start timestamp
+  endTime   DateTime? @map("end_time") // Optional end timestamp
+  notes     String? // Optional description of work done
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String    @map("user_id")
+  vehicle   Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId String    @map("vehicle_id")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("time_logs")
+}
+
+model WorkSession {
+  id        String   @id @default(uuid())
+  checkIn   DateTime @map("check_in")
+  checkOut DateTime? @map("check_out")
+  hours    Float? // Calculated hours (for completed sessions)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId   String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([checkIn])
+  @@map("work_sessions")
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  invoiceNumber   String   @unique @map("invoice_number")
+  type            String // estimate, invoice
+  status          String   @default("draft") // draft, sent, paid, cancelled
+  customerName    String   @map("customer_name")
+  customerEmail   String?  @map("customer_email")
+  customerAddress String?  @map("customer_address")
+  items           Json // Array of line items {description, quantity, unitPrice, total}
+  subtotal        Float
+  taxRate         Float    @default(0) @map("tax_rate")
+  taxAmount       Float    @default(0) @map("tax_amount")
+  total           Float
+  notes           String?
+  vehicle         Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleId       String   @map("vehicle_id")
+  createdBy       User     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById     String   @map("created_by_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("invoices")
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  description String
+  category    String // parts, labor, tools, supplies, other
+  amount      Float
+  date        DateTime
+  notes       String?
+  vehicle     Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  vehicleId   String?  @map("vehicle_id")
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById String   @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("expenses")
+}
+
+model Appointment {
+  id            String   @id @default(uuid())
+  date          DateTime // Appointment date and time
+  customerName  String   @map("customer_name")
+  customerPhone String?  @map("customer_phone") // WhatsApp number
+  customerEmail String?  @map("customer_email")
+  serviceType   String   @map("service_type") // small_service, big_service, repair, inspection, etc.
+  status        String   @default("pending") // pending, confirmed, cancelled, completed
+  notes         String?
+  vehicle       Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  vehicleId     String?  @map("vehicle_id")
+  createdBy     User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById   String?  @map("created_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([date])
+  @@index([status])
+  @@map("appointments")
+}
