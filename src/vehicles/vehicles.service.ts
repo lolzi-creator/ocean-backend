@@ -47,7 +47,7 @@ export class VehiclesService {
     }
   }
 
-  async create(data: { vin: string; brand?: string; model?: string; year?: number; trim?: string; style?: string; bodyType?: string; engine?: string; transmission?: string; drive?: string; manufacturer?: string; origin?: string; licensePlate?: string; workDescription?: string; serviceType?: string; color?: string; mileage?: number; photoUrl?: string; documentPhotoUrl?: string }, userId: string) {
+  async create(data: { vin: string; brand?: string; model?: string; year?: number; trim?: string; style?: string; bodyType?: string; engine?: string; transmission?: string; drive?: string; manufacturer?: string; origin?: string; licensePlate?: string; workDescription?: string; serviceType?: string; color?: string; mileage?: number; photoUrl?: string; documentPhotoUrl?: string; customerName?: string; customerEmail?: string; customerPhone?: string; isActive?: boolean }, userId: string) {
     // Check if vehicle with this VIN already exists
     const existingVehicle = await this.prisma.vehicle.findUnique({
       where: { vin: data.vin },
@@ -96,7 +96,7 @@ export class VehiclesService {
     }
   }
 
-  async update(id: string, data: { brand?: string; model?: string; year?: number; trim?: string; style?: string; bodyType?: string; engine?: string; transmission?: string; drive?: string; manufacturer?: string; origin?: string; licensePlate?: string; workDescription?: string; serviceType?: string; color?: string; mileage?: number; photoUrl?: string; documentPhotoUrl?: string; isActive?: boolean }, userId: string) {
+  async update(id: string, data: { brand?: string; model?: string; year?: number; trim?: string; style?: string; bodyType?: string; engine?: string; transmission?: string; drive?: string; manufacturer?: string; origin?: string; licensePlate?: string; workDescription?: string; serviceType?: string; color?: string; mileage?: number; photoUrl?: string; documentPhotoUrl?: string; customerName?: string; customerEmail?: string; customerPhone?: string; isActive?: boolean }, userId: string) {
     const oldVehicle = await this.findOne(id);
 
     const vehicle = await this.prisma.vehicle.update({
@@ -262,11 +262,19 @@ export class VehiclesService {
     return invoice;
   }
 
-  async createEstimateFromVehicle(vehicleId: string, customerName: string, userId: string, customerEmail?: string, customerAddress?: string) {
+  async createEstimateFromVehicle(vehicleId: string, customerName?: string, userId?: string, customerEmail?: string, customerAddress?: string) {
     const vehicle = await this.findOne(vehicleId);
     
     if (!vehicle.serviceType) {
       throw new BadRequestException('Fahrzeug hat keinen Service-Typ. Bitte wählen Sie zuerst einen Service-Typ.');
+    }
+
+    // Use customer info from vehicle if not provided
+    const finalCustomerName = customerName || vehicle.customerName;
+    const finalCustomerEmail = customerEmail || vehicle.customerEmail;
+    
+    if (!finalCustomerName) {
+      throw new BadRequestException('Fahrzeug hat keine Kundendaten. Bitte erfassen Sie zuerst die Kundendaten beim Fahrzeug.');
     }
 
     const servicePackage = getServicePackage(vehicle.serviceType);
@@ -322,8 +330,8 @@ export class VehiclesService {
         invoiceNumber: estimateNumber,
         type: 'estimate',
         status: 'draft',
-        customerName,
-        customerEmail,
+        customerName: finalCustomerName,
+        customerEmail: finalCustomerEmail,
         customerAddress,
         items,
         subtotal,
@@ -332,7 +340,7 @@ export class VehiclesService {
         total,
         notes: `Angebot für ${servicePackage.name} - ${vehicle.brand || ''} ${vehicle.model || ''} (${vehicle.vin})`,
         vehicleId,
-        createdById: userId,
+        createdById: userId || null,
       },
       include: {
         vehicle: { select: { id: true, vin: true, brand: true, model: true } },

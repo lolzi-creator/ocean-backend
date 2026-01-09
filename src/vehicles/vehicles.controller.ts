@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, UploadedFile, UseInterceptors, BadRequestException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { multerConfig } from './multer.config';
 import { VehiclesService } from './vehicles.service';
@@ -53,6 +53,10 @@ export class VehiclesController {
       mileage?: number;
       photoUrl?: string;
       documentPhotoUrl?: string;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
+      isActive?: boolean;
     },
   ) {
     return this.vehiclesService.create(createVehicleDto, user.id);
@@ -78,9 +82,24 @@ export class VehiclesController {
   @Post('extract-vin')
   @UseInterceptors(FileInterceptor('file', multerConfig))
   async extractVinFromPhoto(@UploadedFile() file: Express.Multer.File) {
-    // TODO: Implement OCR to extract VIN from photo
-    // For now, return empty - user can manually enter VIN
-    return { vin: '', extractedText: '' };
+    if (!file) {
+      throw new BadRequestException('Keine Datei hochgeladen');
+    }
+
+    try {
+      const extractedData = await this.uploadService.extractVinAndName(file);
+      return { 
+        ...extractedData,
+        success: extractedData.vin.length > 0 || extractedData.customerName.length > 0 
+      };
+    } catch (error: any) {
+      // If OCR fails, return empty (user can still enter manually)
+      return { 
+        vin: '', 
+        customerName: '', 
+        success: false 
+      };
+    }
   }
 
   @Patch(':id')
@@ -107,6 +126,9 @@ export class VehiclesController {
       mileage?: number;
       photoUrl?: string;
       documentPhotoUrl?: string;
+      customerName?: string;
+      customerEmail?: string;
+      customerPhone?: string;
       isActive?: boolean;
     },
   ) {
@@ -126,18 +148,19 @@ export class VehiclesController {
     @CurrentUser() user: any,
     @Param('id') id: string,
     @Body()
-    createEstimateDto: {
-      customerName: string;
+    createEstimateDto?: {
+      customerName?: string;
       customerEmail?: string;
       customerAddress?: string;
     },
   ) {
+    // Customer info will be taken from vehicle if not provided
     return this.vehiclesService.createEstimateFromVehicle(
       id,
-      createEstimateDto.customerName,
+      createEstimateDto?.customerName,
       user.id,
-      createEstimateDto.customerEmail,
-      createEstimateDto.customerAddress,
+      createEstimateDto?.customerEmail,
+      createEstimateDto?.customerAddress,
     );
   }
 

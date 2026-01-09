@@ -12,5 +12,6 @@ import { PrismaModule } from '../prisma/prisma.module';
   imports: [PrismaModule, AuthModule, UsersModule, AuditLogsModule, SupabaseModule],
   controllers: [VehiclesController],
   providers: [VehiclesService, UploadService],
+  exports: [UploadService], // Export UploadService so other modules can use it
 })
 export class VehiclesModule {}

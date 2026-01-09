@@ -1,12 +1,17 @@
-import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { InvoicesService } from './invoices.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { UploadService } from '../vehicles/upload.service';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard)
 export class InvoicesController {
-  constructor(private readonly invoicesService: InvoicesService) {}
+  constructor(
+    private readonly invoicesService: InvoicesService,
+    private readonly uploadService: UploadService,
+  ) {}
 
   @Get()
   findAll(
@@ -60,5 +65,32 @@ export class InvoicesController {
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.invoicesService.remove(id);
+  }
+
+  @Post(':id/upload-pdf')
+  @UseInterceptors(FileInterceptor('file'))
+  async uploadPDF(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!file || file.mimetype !== 'application/pdf') {
+      throw new Error('Nur PDF-Dateien sind erlaubt');
+    }
+
+    // Get invoice to find vehicleId
+    const invoice = await this.invoicesService.findOne(id);
+    const vehicleId = invoice.vehicleId;
+
+    // Upload PDF to Supabase Storage
+    const pdfUrl = await this.uploadService.uploadPDF(
+      file.buffer,
+      vehicleId,
+      `${invoice.invoiceNumber}.pdf`,
+    );
+
+    // Update invoice with PDF URL
+    await this.invoicesService.updatePdfUrl(id, pdfUrl);
+
+    return { pdfUrl };
   }
 }

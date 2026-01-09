@@ -1,9 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { UploadService } from '../vehicles/upload.service';
 
 @Injectable()
 export class InvoicesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private uploadService: UploadService,
+  ) {}
 
   async create(
     data: {
@@ -15,6 +19,7 @@ export class InvoicesService {
       taxRate?: number;
       notes?: string;
       vehicleId: string;
+      pdfUrl?: string; // PDF URL from frontend (if generated there)
     },
     userId: string,
   ) {
@@ -42,12 +47,20 @@ export class InvoicesService {
         total,
         notes: data.notes,
         vehicleId: data.vehicleId,
+        pdfUrl: data.pdfUrl,
         createdById: userId,
       },
       include: {
         vehicle: { select: { id: true, vin: true, brand: true, model: true } },
         createdBy: { select: { id: true, name: true, email: true } },
       },
+    });
+  }
+
+  async updatePdfUrl(invoiceId: string, pdfUrl: string) {
+    return this.prisma.invoice.update({
+      where: { id: invoiceId },
+      data: { pdfUrl },
     });
   }
 
