@@ -136,21 +136,18 @@ export class DerendingerController {
   }
 
   /**
-   * Test endpoint to verify connection
+   * Test endpoint to verify connection (uses cached token)
    * GET /derendinger/test
    */
   @Get('test')
   async testConnection() {
     try {
-      const tokenData = await this.derendingerService.login();
+      // Use getToken() instead of login() to use cached token
+      const result = await this.derendingerService.testConnection();
       return {
         success: true,
         message: 'Derendinger connection successful!',
-        tokenInfo: {
-          expiresIn: tokenData.expires_in,
-          scope: tokenData.scope,
-          affiliate: tokenData.located_affiliate,
-        },
+        tokenInfo: result,
       };
     } catch (error) {
       return {

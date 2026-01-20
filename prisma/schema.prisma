@@ -67,6 +67,7 @@ model Vehicle {
   customerName     String?       @map("customer_name") // Customer name from Fahrzeugausweis
   customerEmail    String?       @map("customer_email") // Customer email
   customerPhone    String?       @map("customer_phone") // Customer phone for WhatsApp
+  status           String        @default("on_hold") // on_hold (waiting for quote), active (work in progress), completed
   isActive         Boolean       @default(true) @map("is_active")
   createdAt        DateTime      @default(now()) @map("created_at")
   updatedAt        DateTime      @updatedAt @map("updated_at")

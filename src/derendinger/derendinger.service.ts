@@ -144,9 +144,20 @@ export class DerendingerService {
     try {
       const estId = estimateId || '12341767969731190';
       
-      const curlCmd = `curl -s -X POST "${this.config.vinSearchUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -d '{"vin":"${vin}","estimateId":"${estId}"}'`;
+      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.vinSearchUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '{"vin":"${vin}","estimateId":"${estId}"}'`;
       
-      const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 30000 });
+      const result = execSync(curlCmd, { 
+        encoding: 'utf-8', 
+        timeout: 35000,
+        maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+      });
+      
+      if (!result || result.trim() === '') {
+        this.logger.error('❌ VIN lookup returned empty response');
+        return null;
+      }
+      
+      this.logger.log(`📄 VIN response length: ${result.length} chars`);
       const data = JSON.parse(result);
       
       const gtResponse = data.data?.gtmotiveResponse;
@@ -191,9 +202,9 @@ export class DerendingerService {
       };
 
       const payloadStr = JSON.stringify(payload).replace(/'/g, "'\\''");
-      const curlCmd = `curl -s -X POST "${this.config.partListUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -d '${payloadStr}'`;
+      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.partListUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
 
-      const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 30000 });
+      const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
       const data = JSON.parse(result);
 
       const parts: any[] = [];
@@ -247,9 +258,9 @@ export class DerendingerService {
 
     try {
       const payloadStr = JSON.stringify(payload).replace(/'/g, "'\\''");
-      const curlCmd = `curl -s -X POST "${this.config.multiRefUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -d '${payloadStr}'`;
+      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.multiRefUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
       
-      const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 30000 });
+      const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
       const data = JSON.parse(result);
       
       const results: { reference: string; description: string; cupi: string }[] = [];
@@ -313,9 +324,9 @@ export class DerendingerService {
 
     try {
       const payloadStr = JSON.stringify(payload).replace(/'/g, "'\\''");
-      const curlCmd = `curl -s -X POST "${this.config.articlesUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -d '${payloadStr}'`;
+      const curlCmd = `curl -s --max-time 60 -X POST "${this.config.articlesUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
       
-      const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 30000 });
+      const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 65000, maxBuffer: 50 * 1024 * 1024 });
       const data = JSON.parse(result);
       
       return this.transformArticlesResponse(data);
