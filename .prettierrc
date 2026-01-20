@@ -1,4 +1,4 @@
-{
+db {
   "singleQuote": true,
   "trailingComma": "all"
 }

@@ -13,9 +13,10 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { WorkSessionsModule } from './work-sessions/work-sessions.module';
+import { DerendingerModule } from './derendinger/derendinger.module';
 
 @Module({
-  imports: [PrismaModule, SupabaseModule, AuthModule, UsersModule, AuditLogsModule, TimeLogsModule, InvoicesModule, ExpensesModule, VehiclesModule, WhatsAppModule, AppointmentsModule, WorkSessionsModule],
+  imports: [PrismaModule, SupabaseModule, AuthModule, UsersModule, AuditLogsModule, TimeLogsModule, InvoicesModule, ExpensesModule, VehiclesModule, WhatsAppModule, AppointmentsModule, WorkSessionsModule, DerendingerModule],
   controllers: [AppController],
   providers: [AppService],
 })

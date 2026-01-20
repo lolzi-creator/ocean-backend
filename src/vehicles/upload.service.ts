@@ -246,7 +246,6 @@ Important:
         const parsed = JSON.parse(responseText);
         // Remove all spaces from VIN (Swiss documents may have spaces)
         let vin = (parsed.vin || '').toString().trim().toUpperCase().replace(/\s+/g, '');
-        const customerName = (parsed.customerName || '').toString().trim();
 
         // Validate VIN format (17 chars, no I, O, Q)
         const validVin = vin.length === 17 && /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? vin : '';
