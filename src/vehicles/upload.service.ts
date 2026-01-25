@@ -261,6 +261,7 @@ Important:
           .replace(/\s+\d{4,}.*$/i, '') // Remove postal codes and everything after
           .trim();
         
+          // Customer adress
         const customerAddress = (parsed.customerAddress || '').toString().trim();
         
         // Extract and clean other vehicle data
