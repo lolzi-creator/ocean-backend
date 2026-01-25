@@ -35,8 +35,6 @@ VIN_RESPONSE=$(curl -s -X POST "https://d-store.ch/rest-ch-ax/gtmotive/vehicle/s
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Referer: https://d-store.ch/dch-ax/home" \
-  -H "X-Client-Dms: false" \
-  -H "X-Client-Version: 5.17.8" \
   -d "{\"vin\":\"$VIN\",\"estimateId\":\"$ESTIMATE_ID\"}")
 
 UMC=$(echo "$VIN_RESPONSE" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('data',{}).get('gtmotiveResponse',{}).get('umc',''))" 2>/dev/null)
@@ -59,8 +57,6 @@ PART_LIST=$(curl -s -X POST "https://d-store.ch/rest-ch-ax/gtmotive/part-list/se
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Referer: https://d-store.ch/dch-ax/home" \
-  -H "X-Client-Dms: false" \
-  -H "X-Client-Version: 5.17.8" \
   -d "{\"equipmentRanks\":$EQUIP_RANKS,\"equipments\":$EQUIPMENTS,\"umc\":\"$UMC\"}")
 
 # Show selected parts we want to search
@@ -92,8 +88,6 @@ MULTI_REF_RESPONSE=$(curl -s -X POST "https://d-store.ch/rest-ch-ax/gtmotive/mul
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Referer: https://d-store.ch/dch-ax/home" \
-  -H "X-Client-Dms: false" \
-  -H "X-Client-Version: 5.17.8" \
   -d "{
     \"gtmotiveMultiPartsThreeSearchRequest\": {
       \"umc\": \"$UMC\",
@@ -164,8 +158,6 @@ ARTICLES_RESPONSE=$(curl -s -X POST "https://d-store.ch/rest-ch-ax/gtmotive/v4/a
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Referer: https://d-store.ch/dch-ax/home" \
-  -H "X-Client-Dms: false" \
-  -H "X-Client-Version: 5.17.8" \
   -d "{
     \"makeCode\": \"MB1\",
     \"operations\": $OPERATIONS,

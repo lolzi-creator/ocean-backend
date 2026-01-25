@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { execSync } from 'child_process';
+import * as crypto from 'crypto';
 
 interface DerendingerToken {
   access_token: string;
@@ -52,6 +53,33 @@ export class DerendingerService {
     password: process.env.DERENDINGER_PASSWORD || 'Oceancar008',
     affiliate: 'derendinger-ch',
   };
+
+  // DMS Interface configuration for ordering
+  private readonly dmsConfig = {
+    // PREPROD environment for testing
+    preprodUrl: 'https://connect.preprod.sag.services/dch-ax/',
+    preprodAuthUrl: 'https://connect.preprod.sag.services/auth-server-ch-ax/oauth/token',
+    // PROD environment
+    prodUrl: 'https://www.d-store.ch/dch-ax/',
+    prodAuthUrl: 'https://d-store.ch/auth-server-ch-ax/oauth/token',
+    // DMS credentials from Derendinger
+    companyId: 'derendinger-switzerland',
+    companyPassword: '123456@A',
+    dmsUsername: 'DMS-DDOceancar',
+    customerId: '1234',
+    // DMS client credentials (different from shop credentials)
+    dmsClientCredentials: 'Y2xvdWQtZG1zLWRlcmVuZGluZ2VyLXN3aXR6ZXJsYW5kOnNhZy1lc2hvcC1id3M=', // cloud-dms-derendinger-switzerland:sag-eshop-bws
+    // Webhook URL - will be set dynamically
+    webhookBaseUrl: process.env.BACKEND_URL || 'http://localhost:3000',
+  };
+
+  // Store pending orders waiting for webhook callback
+  private pendingOrders: Map<string, {
+    vehicleId: string;
+    reference: string;
+    articles: any[];
+    createdAt: Date;
+  }> = new Map();
 
   // Service type to part codes mapping
   // Part codes and functional groups from Derendinger part-list/search
@@ -144,7 +172,7 @@ export class DerendingerService {
     try {
       const estId = estimateId || '12341767969731190';
       
-      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.vinSearchUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '{"vin":"${vin}","estimateId":"${estId}"}'`;
+      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.vinSearchUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "User-Agent: Mozilla/5.0" -d '{"vin":"${vin}","estimateId":"${estId}"}'`;
       
       const result = execSync(curlCmd, { 
         encoding: 'utf-8', 
@@ -202,7 +230,7 @@ export class DerendingerService {
       };
 
       const payloadStr = JSON.stringify(payload).replace(/'/g, "'\\''");
-      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.partListUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
+      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.partListUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
 
       const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
       const data = JSON.parse(result);
@@ -258,7 +286,7 @@ export class DerendingerService {
 
     try {
       const payloadStr = JSON.stringify(payload).replace(/'/g, "'\\''");
-      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.multiRefUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
+      const curlCmd = `curl -s --max-time 30 -X POST "${this.config.multiRefUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
       
       const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 35000, maxBuffer: 10 * 1024 * 1024 });
       const data = JSON.parse(result);
@@ -324,7 +352,7 @@ export class DerendingerService {
 
     try {
       const payloadStr = JSON.stringify(payload).replace(/'/g, "'\\''");
-      const curlCmd = `curl -s --max-time 60 -X POST "${this.config.articlesUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "X-Client-Dms: false" -H "X-Client-Version: 5.17.8" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
+      const curlCmd = `curl -s --max-time 60 -X POST "${this.config.articlesUrl}" -H "Accept: application/json" -H "Accept-Language: de" -H "Content-Type: application/json" -H "Authorization: Bearer ${token}" -H "Referer: https://d-store.ch/dch-ax/home" -H "User-Agent: Mozilla/5.0" -d '${payloadStr}'`;
       
       const result = execSync(curlCmd, { encoding: 'utf-8', timeout: 65000, maxBuffer: 50 * 1024 * 1024 });
       const data = JSON.parse(result);
@@ -505,5 +533,186 @@ export class DerendingerService {
       token: token.substring(0, 50) + '...',
       expiresIn: this.cachedToken?.expires_in || 0,
     };
+  }
+
+  // ==================== DMS INTERFACE METHODS ====================
+
+  /**
+   * Generate DMS session token for ordering
+   * Uses the DMS credentials to get a special token for the shopping cart transfer
+   */
+  async getDmsToken(usePreprod = true): Promise<string> {
+    this.logger.log('🔐 Getting DMS token for ordering...');
+    
+    const authUrl = usePreprod 
+      ? this.dmsConfig.preprodAuthUrl 
+      : this.dmsConfig.prodAuthUrl;
+    
+    const timestamp = Date.now().toString();
+    
+    // Build the form data as per Derendinger spec
+    const formData = new URLSearchParams({
+      username: this.dmsConfig.dmsUsername,
+      password: this.config.password, // Same password as shop
+      grant_type: 'password',
+      scope: 'read write',
+      affiliate: this.config.affiliate,
+      login_mode: 'NORMAL',
+      located_affiliate: this.config.affiliate,
+      customer_id: this.dmsConfig.customerId,
+    });
+
+    try {
+      const response = await fetch(authUrl, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Basic ${this.dmsConfig.dmsClientCredentials}`,
+        },
+        body: formData.toString(),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.error(`❌ DMS token failed: ${response.status} - ${errorText}`);
+        throw new Error(`DMS token request failed: ${response.status}`);
+      }
+
+      const tokenData = await response.json();
+      this.logger.log(`✅ DMS token obtained successfully`);
+      return tokenData.access_token;
+    } catch (error) {
+      this.logger.error(`❌ DMS token error: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate the DMS session URL to open Derendinger shop with pre-filled basket
+   * This URL can be opened in a popup/iframe for the user to complete the order
+   */
+  async generateDmsSessionUrl(params: {
+    vehicleId: string;
+    articles: { id: string; quantity: number; name?: string }[];
+    reference?: string;
+    usePreprod?: boolean;
+  }): Promise<{ sessionUrl: string; orderId: string }> {
+    this.logger.log('🛒 Generating DMS session URL...');
+    this.logger.log(`   Articles: ${params.articles.length}`);
+    
+    const usePreprod = params.usePreprod ?? true; // Default to preprod
+    const baseUrl = usePreprod ? this.dmsConfig.preprodUrl : this.dmsConfig.prodUrl;
+    
+    // Generate a unique order ID for tracking
+    const orderId = crypto.randomUUID();
+    
+    // Get the DMS token
+    const dmsToken = await this.getDmsToken(usePreprod);
+    
+    // Build article IDs and quantities (semicolon separated)
+    const articleIds = params.articles.map(a => a.id).join(';');
+    const quantities = params.articles.map(a => a.quantity.toString()).join(';');
+    
+    // Build the webhook URL that Derendinger will call when order is completed
+    const webhookUrl = `${this.dmsConfig.webhookBaseUrl}/derendinger/webhook/${orderId}`;
+    
+    // Reference for the order (will be shown in Derendinger)
+    const reference = params.reference || params.vehicleId;
+    
+    // Store pending order for webhook callback
+    this.pendingOrders.set(orderId, {
+      vehicleId: params.vehicleId,
+      reference: reference,
+      articles: params.articles,
+      createdAt: new Date(),
+    });
+    
+    // Build URL parameters as per Derendinger spec
+    const urlParams = new URLSearchParams({
+      U: this.dmsConfig.dmsUsername,
+      A: this.config.affiliate,
+      P1: '', // Empty for auto-redirect
+      P4: '', // Empty for default
+      P5: articleIds, // Article IDs
+      P6: quantities, // Quantities
+      R: reference, // Reference/Referenz
+      HOOK_URL: webhookUrl, // Callback URL
+      T: dmsToken, // JWT token
+    });
+    
+    const sessionUrl = `${baseUrl}openSession?${urlParams.toString()}`;
+    
+    this.logger.log(`✅ DMS session URL generated`);
+    this.logger.log(`   Order ID: ${orderId}`);
+    this.logger.log(`   Webhook URL: ${webhookUrl}`);
+    
+    return { sessionUrl, orderId };
+  }
+
+  /**
+   * Handle webhook callback from Derendinger when order is completed/cancelled
+   */
+  async handleWebhook(orderId: string, data: any): Promise<{
+    success: boolean;
+    order?: any;
+    error?: string;
+  }> {
+    this.logger.log(`📨 Webhook received for order: ${orderId}`);
+    this.logger.log(`   Data: ${JSON.stringify(data).substring(0, 200)}...`);
+    
+    const pendingOrder = this.pendingOrders.get(orderId);
+    
+    if (!pendingOrder) {
+      this.logger.warn(`⚠️ No pending order found for ID: ${orderId}`);
+      return { 
+        success: false, 
+        error: 'Order not found or already processed' 
+      };
+    }
+    
+    // Parse the webhook data
+    // The exact format depends on what Derendinger sends back
+    const orderResult = {
+      orderId,
+      vehicleId: pendingOrder.vehicleId,
+      reference: pendingOrder.reference,
+      articles: pendingOrder.articles,
+      status: data.status || 'completed',
+      derendingerOrderId: data.orderNumber || data.orderId,
+      totalAmount: data.totalAmount,
+      orderDate: new Date(),
+      webhookData: data,
+    };
+    
+    // Remove from pending orders
+    this.pendingOrders.delete(orderId);
+    
+    this.logger.log(`✅ Order processed: ${orderResult.derendingerOrderId || 'N/A'}`);
+    
+    return {
+      success: true,
+      order: orderResult,
+    };
+  }
+
+  /**
+   * Get status of a pending order
+   */
+  getPendingOrder(orderId: string) {
+    return this.pendingOrders.get(orderId);
+  }
+
+  /**
+   * Clean up old pending orders (older than 24 hours)
+   */
+  cleanupPendingOrders() {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    for (const [orderId, order] of this.pendingOrders.entries()) {
+      if (order.createdAt < oneDayAgo) {
+        this.pendingOrders.delete(orderId);
+        this.logger.log(`🧹 Cleaned up old pending order: ${orderId}`);
+      }
+    }
   }
 }
