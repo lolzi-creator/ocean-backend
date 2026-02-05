@@ -14,7 +14,10 @@ async function bootstrap() {
       'http://localhost:5173',  // Vite dev server (ocean-frontend)
       'http://localhost:3000',  // Next.js website (ocean-maintenance)
       'http://localhost:3001',  // Alternate port
-      'https://ocean-garage.ch', // Production (adjust as needed)
+      'https://ocean-car.ch',   // Production website
+      'https://www.ocean-car.ch', // Production website with www
+      'https://app.ocean-car.ch', // Production software
+      'https://api.ocean-car.ch', // API itself
     ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
