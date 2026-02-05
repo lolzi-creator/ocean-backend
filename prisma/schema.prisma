@@ -25,20 +25,21 @@ model User {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  createdVehicles     Vehicle[]     @relation("VehicleCreatedBy")
-  updatedVehicles     Vehicle[]     @relation("VehicleUpdatedBy")
-  createdUsers        User[]        @relation("UserCreatedBy")
-  updatedUsers        User[]        @relation("UserUpdatedBy")
-  createdBy           User?         @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  createdById         String?       @map("created_by_id")
-  updatedBy           User?         @relation("UserUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  updatedById         String?       @map("updated_by_id")
-  auditLogs           AuditLog[]
-  timeLogs            TimeLog[]
-  workSessions        WorkSession[]
-  createdInvoices     Invoice[]
-  createdExpenses     Expense[]
-  createdAppointments Appointment[]
+  createdVehicles         Vehicle[]         @relation("VehicleCreatedBy")
+  updatedVehicles         Vehicle[]         @relation("VehicleUpdatedBy")
+  createdUsers            User[]            @relation("UserCreatedBy")
+  updatedUsers            User[]            @relation("UserUpdatedBy")
+  createdBy               User?             @relation("UserCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdById             String?           @map("created_by_id")
+  updatedBy               User?             @relation("UserUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  updatedById             String?           @map("updated_by_id")
+  auditLogs               AuditLog[]
+  timeLogs                TimeLog[]
+  workSessions            WorkSession[]
+  createdInvoices         Invoice[]
+  createdExpenses         Expense[]
+  createdAppointments     Appointment[]
+  createdServiceTemplates ServiceTemplate[]
 
   @@map("users")
 }
@@ -188,4 +189,22 @@ model Appointment {
   @@index([date])
   @@index([status])
   @@map("appointments")
+}
+
+// Custom service templates - user-created service packages with selected parts
+model ServiceTemplate {
+  id             String   @id @default(uuid())
+  name           String   // Template name (e.g., "Winterservice", "Premium Ölwechsel")
+  description    String?  // Optional description
+  estimatedHours Float    @default(1) @map("estimated_hours") // Estimated labor hours
+  isActive       Boolean  @default(true) @map("is_active")
+  // Store selected parts as JSON array with part codes and details
+  // Format: [{partCode: string, name: string, functionalGroup?: string, quantity: number}]
+  parts          Json     @default("[]")
+  createdBy      User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdById    String?  @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("service_templates")
 }

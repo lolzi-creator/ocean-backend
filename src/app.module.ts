@@ -14,9 +14,11 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { AppointmentsModule } from './appointments/appointments.module';
 import { WorkSessionsModule } from './work-sessions/work-sessions.module';
 import { DerendingerModule } from './derendinger/derendinger.module';
+import { ServiceTemplatesModule } from './service-templates/service-templates.module';
+import { WebChatModule } from './web-chat/web-chat.module';
 
 @Module({
-  imports: [PrismaModule, SupabaseModule, AuthModule, UsersModule, AuditLogsModule, TimeLogsModule, InvoicesModule, ExpensesModule, VehiclesModule, WhatsAppModule, AppointmentsModule, WorkSessionsModule, DerendingerModule],
+  imports: [PrismaModule, SupabaseModule, AuthModule, UsersModule, AuditLogsModule, TimeLogsModule, InvoicesModule, ExpensesModule, VehiclesModule, WhatsAppModule, AppointmentsModule, WorkSessionsModule, DerendingerModule, ServiceTemplatesModule, WebChatModule],
   controllers: [AppController],
   providers: [AppService],
 })

@@ -10,13 +10,19 @@ async function bootstrap() {
   
   // Enable CORS for frontend
   app.enableCors({
-    origin: ['http://localhost:5173', 'http://localhost:3000'],
+    origin: [
+      'http://localhost:5173',  // Vite dev server (ocean-frontend)
+      'http://localhost:3000',  // Next.js website (ocean-maintenance)
+      'http://localhost:3001',  // Alternate port
+      'https://ocean-garage.ch', // Production (adjust as needed)
+    ],
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
   
-  await app.listen(process.env.PORT ?? 3000);
-  console.log(`🚀 Backend running on http://localhost:${process.env.PORT ?? 3000}`);
+  const port = process.env.PORT ?? 3001;
+  await app.listen(port);
+  console.log(`🚀 Backend running on http://localhost:${port}`);
 }
 bootstrap();
