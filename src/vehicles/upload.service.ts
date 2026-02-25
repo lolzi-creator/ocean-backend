@@ -184,45 +184,49 @@ export class UploadService {
             content: [
               {
                 type: 'text',
-                text: `Analyze this Swiss vehicle registration document (Fahrzeugausweis) and extract ALL vehicle and owner information:
+                text: `Analyze this Swiss vehicle registration document (Fahrzeugausweis) and extract ALL vehicle and owner information.
 
-1. VIN (Fahrgestell-Nr./Chassis no.) - Field 23, exactly 17 alphanumeric characters WITHOUT spaces
-2. Customer name (Halter/Eigentümer) - Field 01-06, "Name, Vornamen" section. Extract ONLY the name (person or company name), NOT the address. Stop at the first address element (street name, house number, postal code, city). Examples: "Max Mustermann" or "Carrosserie G&G AG" (NOT "Carrosserie G&G AG Freiburgstrasse 583...")
-3. Customer address (optional) - Field 01-06, extract the full address if visible (street, number, postal code, city)
-4. Brand (Marke) - Field 21 "Marke und Typ", extract the brand name (e.g., "Mitsubishi" from "Mitsubishi Colt 1300")
-5. Model (Typ) - Field 21 "Marke und Typ", extract the model (e.g., "Colt 1300" from "Mitsubishi Colt 1300")
-6. Year - Field 36 "1. Inverkehrsetzung", extract the year (e.g., "1988" from "01.05.1988")
-7. Color (Farbe) - Field 26, extract the color name (e.g., "rot", "weiss", "schwarz")
-8. License Plate (Schild) - Field 15, extract the full license plate including canton code and number (e.g., "BE 743894" or "ZH 123456")
-9. Body Type (Karosserie) - Field 25, extract body type (e.g., "Limousine", "Kombi", "Coupe", "Stationswagen")
-10. Engine (Hubraum) - Field 37, extract engine capacity (e.g., "1298" from "1'298 cm³" or "1298 cm³")
-11. Power (Leistung) - Field 76, extract power (e.g., "49" from "49 kW" or "49 kW")
+CRITICAL - VIN EXTRACTION (Field 23, "Fahrgestell-Nr." / "Chassis no."):
+- The VIN is EXACTLY 17 alphanumeric characters. Remove ALL spaces.
+- The VIN appears TWICE on the document (once in the top section, once in the bottom section near "Fahrgestell-Nr."). Cross-check BOTH occurrences to ensure accuracy.
+- Pay very careful attention to similar-looking characters: B vs D vs 8, 0 vs O vs Q, 1 vs I vs l, 5 vs S, 2 vs Z.
+- VIN NEVER contains letters I, O, or Q.
+- The "Stammnummer" field (e.g., "632.502.167") is NOT the VIN - ignore it.
+- Mercedes VINs start with WDD, WDB, WDC, WDF, or W1K. BMW starts with WBA, WBS. VW starts with WVW, WV1, WV2.
 
-Return your response in JSON format only:
+Other fields to extract:
+1. Customer name (Halter/Eigentümer) - Field 01-06, "Name, Vornamen". Extract ONLY the name, NOT the address.
+2. Customer address - Field 01-06, the full address (street, number, postal code, city).
+3. Brand (Marke) - Field 21 "Marke und Typ", the brand name (e.g., "Mercedes-Benz").
+4. Model (Typ) - Field 21, the model (e.g., "C 200 4m").
+5. Year - Field 36 "1. Inverkehrsetzung", just the year (e.g., "1991").
+6. Color (Farbe) - Field 26.
+7. License Plate (Schild) - Field 15, canton code + number (e.g., "BE 442804").
+8. Body Type (Karosserie) - Field 25 (e.g., "Limousine").
+9. Engine (Hubraum) - Field 37, just the number (e.g., "1998").
+10. Power (Leistung) - Field 76, just the number in kW (e.g., "100").
+
+Return ONLY valid JSON:
 {
-  "vin": "JMBMNC11AJU405125",
+  "vin": "WDD2053431F759027",
   "customerName": "Max Mustermann",
-  "customerAddress": "Freiburgstrasse 583, 3172 Niederwangen b. Bern",
-  "brand": "Mitsubishi",
-  "model": "Colt 1300",
-  "year": "1988",
-  "color": "rot",
-  "licensePlate": "ZH 123456",
+  "customerAddress": "Musterstrasse 1, 3000 Bern",
+  "brand": "Mercedes-Benz",
+  "model": "C 200 4m",
+  "year": "1991",
+  "color": "schwarz",
+  "licensePlate": "BE 442804",
   "bodyType": "Limousine",
-  "engine": "1298",
-  "power": "49"
+  "engine": "1998",
+  "power": "100"
 }
 
-Important: 
-- VIN must be exactly 17 characters with NO spaces (remove all spaces)
-- Customer name: Extract ONLY the name, stop before any address information (street names, numbers, postal codes)
-- Customer address: Full address if visible, otherwise empty string
-- License plate: Include both canton code AND number if visible (e.g., "BE 743894")
-- Year should be just the year number (e.g., "1988" not "01.05.1988")
-- Engine should be just the number without units (e.g., "1298" not "1'298 cm³")
-- Power should be just the number without units (e.g., "49" not "49 kW")
-- If you cannot find a value, use an empty string ""
-- Only return valid JSON, nothing else.`,
+Rules:
+- VIN: exactly 17 chars, no spaces, no I/O/Q. Double-check every character.
+- Customer name: ONLY the name, stop before any address.
+- Year: just the 4-digit year.
+- Engine/Power: just the number, no units.
+- If you cannot find a value, use "".`,
               },
               {
                 type: 'image_url',
@@ -248,7 +252,28 @@ Important:
         let vin = (parsed.vin || '').toString().trim().toUpperCase().replace(/\s+/g, '');
 
         // Validate VIN format (17 chars, no I, O, Q)
-        const validVin = vin.length === 17 && /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? vin : '';
+        let validVin = vin.length === 17 && /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? vin : '';
+
+        // VIN checksum validation (position 9 is a check digit)
+        if (validVin) {
+          const translitMap: Record<string, number> = {
+            A:1,B:2,C:3,D:4,E:5,F:6,G:7,H:8,J:1,K:2,L:3,M:4,N:5,P:7,R:9,S:2,T:3,U:4,V:5,W:6,X:7,Y:8,Z:9,
+          };
+          const weights = [8,7,6,5,4,3,2,10,0,9,8,7,6,5,4,3,2];
+          let sum = 0;
+          for (let i = 0; i < 17; i++) {
+            const c = validVin[i];
+            const val = c >= '0' && c <= '9' ? parseInt(c) : translitMap[c] || 0;
+            sum += val * weights[i];
+          }
+          const remainder = sum % 11;
+          const checkDigit = remainder === 10 ? 'X' : remainder.toString();
+          if (validVin[8] !== checkDigit) {
+            console.log(`[OCR] VIN checksum FAILED: position 9 is '${validVin[8]}', expected '${checkDigit}'. VIN may have been misread by OCR.`);
+          } else {
+            console.log(`[OCR] VIN checksum PASSED`);
+          }
+        }
 
         // Extract and clean customer name - remove address if included
         let customerName = (parsed.customerName || '').toString().trim();

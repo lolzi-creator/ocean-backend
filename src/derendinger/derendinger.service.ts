@@ -43,11 +43,19 @@ export class DerendingerService {
   private vehicleCache: Map<string, VehicleData> = new Map();
 
   private readonly config = {
+    baseUrl: 'https://d-store.ch',
     authUrl: 'https://d-store.ch/auth-server-ch-ax/oauth/token',
     vinSearchUrl: 'https://d-store.ch/rest-ch-ax/gtmotive/vehicle/search-by-vin',
+    securityCheckUrl: 'https://d-store.ch/rest-ch-ax/gtmotive/vin/security-check',
     partListUrl: 'https://d-store.ch/rest-ch-ax/gtmotive/part-list/search',
     multiRefUrl: 'https://d-store.ch/rest-ch-ax/gtmotive/multi-references/search',
     articlesUrl: 'https://d-store.ch/rest-ch-ax/gtmotive/v4/articles',
+    erpSyncUrl: 'https://d-store.ch/rest-ch-ax/articles/erp-sync',
+    cartAddUrl: 'https://d-store.ch/rest-ch-ax/cart/article/add',
+    cartViewUrl: 'https://d-store.ch/rest-ch-ax/cart/view',
+    cartRemoveUrl: 'https://d-store.ch/rest-ch-ax/cart/article/remove',
+    orderCreateUrl: 'https://d-store.ch/rest-ch-ax/order/v2/create',
+    contextUrl: 'https://d-store.ch/rest-ch-ax/context/',
     clientCredentials: 'ZXNob3Atd2ViOnNhZy1lc2hvcC1id3M=',
     username: process.env.DERENDINGER_USERNAME || 'DMS-DDOceancar',
     password: process.env.DERENDINGER_PASSWORD || 'Oceancar008',
@@ -156,6 +164,41 @@ export class DerendingerService {
   }
 
   /**
+   * Shared API call helper using fetch (replaces curl-based calls)
+   */
+  private async apiCall(method: string, url: string, body?: any): Promise<any> {
+    const token = await this.getToken();
+
+    const opts: RequestInit = {
+      method,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'Accept-Language': 'de',
+      },
+    };
+
+    if (body) {
+      opts.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, opts);
+    const text = await response.text();
+
+    if (!response.ok) {
+      this.logger.error(`API ${method} ${url} failed: ${response.status} - ${text.substring(0, 500)}`);
+      throw new Error(`Derendinger API error: ${response.status}`);
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  }
+
+  /**
    * STEP 2: VIN Lookup - Get UMC, equipments, and equipmentRanks
    */
   async lookupVehicleByVin(vin: string, estimateId?: string): Promise<VehicleData | null> {
@@ -186,11 +229,12 @@ export class DerendingerService {
       }
       
       this.logger.log(`📄 VIN response length: ${result.length} chars`);
+      this.logger.log(`📄 VIN raw response: ${result.substring(0, 500)}`);
       const data = JSON.parse(result);
-      
+
       const gtResponse = data.data?.gtmotiveResponse;
       const vehicle = data.data?.vehicle;
-      
+
       if (gtResponse && gtResponse.umc) {
         const vehicleData: VehicleData = {
           umc: gtResponse.umc,
@@ -200,14 +244,15 @@ export class DerendingerService {
           vehicleId: vehicle?.id || vehicle?.vehid || 'V119604M28178',
           timestamp: Date.now(),
         };
-        
+
         this.vehicleCache.set(vin, vehicleData);
-        
+
         this.logger.log(`✅ Found vehicle: UMC=${vehicleData.umc}, Vehicle ID=${vehicleData.vehicleId}`);
         return vehicleData;
       }
-      
-      this.logger.warn(`❌ VIN lookup returned no data`);
+
+      this.logger.warn(`❌ VIN lookup returned no vehicle data. The vehicle may be too old or not in Derendinger's database.`);
+      this.logger.warn(`❌ Response: ${JSON.stringify(data)}`);
       return null;
     } catch (error) {
       this.logger.error(`❌ VIN lookup error: ${error}`);
@@ -373,45 +418,46 @@ export class DerendingerService {
     partCodes?: PartCode[];
     serviceType?: string;
     estimateId?: string;
+    includePrices?: boolean;
   }): Promise<any> {
     this.logger.log('');
     this.logger.log('🚗 ========== DERENDINGER FULL FLOW ==========');
     this.logger.log(`VIN: ${params.vin}`);
-    
+
     // Determine which part codes to search
     let partCodes = params.partCodes || [];
     if (!partCodes.length && params.serviceType) {
       partCodes = this.servicePartCodes[params.serviceType] || [];
       this.logger.log(`Service type: ${params.serviceType} -> ${partCodes.length} parts`);
     }
-    
+
     if (!partCodes.length) {
       this.logger.warn('❌ No part codes specified');
       return { vehicle: null, totalArticles: 0, articles: [] };
     }
-    
+
     this.logger.log(`Parts to search: ${partCodes.map(p => p.name || p.partCode).join(', ')}`);
     this.logger.log('');
 
     // STEP 1: Login (happens automatically via getToken)
-    
+
     // STEP 2: VIN Lookup
     const vehicleData = await this.lookupVehicleByVin(params.vin, params.estimateId);
     if (!vehicleData) {
       this.logger.error('❌ Could not find vehicle data');
-      return { vehicle: null, totalArticles: 0, articles: [] };
+      return { vehicle: null, totalArticles: 0, articles: [], error: 'Fahrzeug nicht in der Derendinger-Datenbank gefunden. Möglicherweise ist das Fahrzeug zu alt oder die VIN wird nicht unterstützt.' };
     }
-    
+
     // STEP 3: Part List (optional - we already know our part codes)
     // Can be used to validate part codes exist for this vehicle
-    
+
     // STEP 4: Multi-References Search
     const oeReferences = await this.getOeReferences(vehicleData, partCodes);
     if (!oeReferences.length) {
       this.logger.warn('⚠️ No OE references found for any parts');
       return { vehicle: null, totalArticles: 0, articles: [] };
     }
-    
+
     // STEP 5: Articles Search
     const result = await this.searchArticlesByOeRefs(
       params.vin,
@@ -420,17 +466,74 @@ export class DerendingerService {
       oeReferences,
       params.estimateId
     );
-    
+
+    // STEP 6: Get prices via ERP-Sync (optional, enabled by default)
+    if (params.includePrices !== false && result.articles?.length > 0) {
+      try {
+        const priceData = await this.getArticlePrices(result.articles);
+
+        // Merge prices into articles (both display fields and raw article for cart)
+        for (const article of result.articles) {
+          const erpData = priceData[article.idPim];
+          if (erpData) {
+            const price = erpData.price?.price;
+            article.price = price ? {
+              uvpePrice: price.uvpePrice,
+              uvpePriceWithVat: price.uvpePriceWithVat,
+              oepPrice: price.oepPrice,
+              oepPriceWithVat: price.oepPriceWithVat,
+              net1Price: price.net1Price,
+              net1PriceWithVat: price.net1PriceWithVat,
+              discountInPercent: price.discountInPercent,
+              grossPrice: price.grossPrice,
+              grossPriceWithVat: price.grossPriceWithVat,
+              totalGrossPrice: price.totalGrossPrice,
+            } : null;
+
+            // Update availability from erp-sync
+            const avail = erpData.availabilities?.[0];
+            if (avail) {
+              article.deliveryInfo = avail.sofort
+                ? 'Sofort lieferbar'
+                : avail.formattedCETArrivalDate || article.deliveryInfo;
+              article.availabilityType = avail.sofort ? 'immediate' : 'available';
+            }
+
+            // Store full erp data for cart operations
+            article.erpData = erpData;
+
+            // Merge ERP data into raw article (Derendinger cart/add requires these)
+            if (article._rawArticle) {
+              article._rawArticle.price = erpData.price || null;
+              article._rawArticle.stock = erpData.stock || article._rawArticle.stock;
+              article._rawArticle.totalAxStock = erpData.totalAxStock ?? article._rawArticle.totalAxStock;
+              article._rawArticle.deliverableStocks = erpData.deliverableStocks || article._rawArticle.deliverableStocks;
+              article._rawArticle.availabilities = erpData.availabilities || [];
+              article._rawArticle.expressDeliveryFees = erpData.expressDeliveryFees || [];
+              article._rawArticle.deliverableStock = erpData.deliverableStock ?? article._rawArticle.deliverableStock ?? 0;
+              article._rawArticle.availRequested = true;
+            }
+          }
+        }
+
+        this.logger.log(`💰 Prices merged for ${Object.keys(priceData).length} articles`);
+      } catch (error) {
+        this.logger.warn(`⚠️ ERP-Sync failed, articles returned without prices: ${error}`);
+      }
+    }
+
     this.logger.log('');
     this.logger.log(`✅ TOTAL: ${result.totalArticles} articles found!`);
     this.logger.log('🚗 ========== FLOW COMPLETE ==========');
     this.logger.log('');
-    
+
     return result;
   }
 
   /**
-   * Transform raw Derendinger response to clean format
+   * Transform raw Derendinger response to clean format.
+   * Preserves _rawArticle + _rawCategory on each article for cart operations,
+   * and _rawVehicle on the result for the same reason.
    */
   private transformArticlesResponse(data: any): any {
     const articles: any[] = [];
@@ -445,14 +548,14 @@ export class DerendingerService {
             // Skip duplicates
             if (seenIds.has(article.id)) continue;
             seenIds.add(article.id);
-            
+
             // Determine delivery availability from stock data
             const stock = typeof article.stock === 'object' ? article.stock?.stock || 0 : article.stock || 0;
             const totalStock = article.totalAxStock || 0;
-            
+
             let deliveryInfo = 'Nicht verfügbar';
             let availabilityType = 'none';
-            
+
             if (stock > 0) {
               deliveryInfo = 'Sofort lieferbar';
               availabilityType = 'immediate';
@@ -463,13 +566,18 @@ export class DerendingerService {
 
             articles.push({
               id: article.id,
+              idPim: article.id_pim,
+              artid: article.artid,
+              artnr: article.artnr,
               articleNumber: article.artnr_display,
               name: article.name || article.freetextDisplayDesc,
-              description: article.freetextDisplayDesc,
+              description: article.freetextDisplayDesc || article.product_addon,
               supplier: typeof article.supplier === 'object' ? article.supplier.description : article.supplier,
               brand: article.product_brand,
               stock: stock,
               totalStock: totalStock,
+              rawStock: article.stock,
+              deliverableStocks: article.deliverableStocks || [],
               availabilityType,
               deliveryInfo,
               price: article.price || null,
@@ -477,13 +585,24 @@ export class DerendingerService {
                 .filter((img: any) => img.img_typ === 'image' || img.img_typ === 'image_300')
                 .map((img: any) => img.ref),
               category: genArt.genArtId,
+              gaId: genArt.gaid,
+              gaDesc: genArt.gaDesc,
               categoryName: article.genArtTxts?.[0]?.gatxtdech || article.name,
+              cupiCode: category.cupiCode,
               oeNumbers: article.oeNumbers || {},
               criteria: (article.criteria || [])
                 .map((c: any) => ({ name: c.cn, value: c.cvp }))
                 .filter((c: any) => c.name),
               salesQuantity: article.salesQuantity || 1,
+              amountNumber: article.amountNumber || 1,
               allowedAddToShoppingCart: article.allowedAddToShoppingCart,
+              // Preserve full raw article for cart/add (Derendinger requires the complete object)
+              _rawArticle: article,
+              _rawCategory: {
+                gaId: (article.combinedGenArtIds || [genArt.genArtId]).join(','),
+                gaDesc: article.genArtTxts?.[0]?.gatxtdech || article.name || '',
+                rootDesc: category.rootDescription || category.cupiDescription || '',
+              },
             });
           }
         }
@@ -501,9 +620,299 @@ export class DerendingerService {
         powerHp: vehicleData.vehicle_power_hp,
         fuelType: vehicleData.vehicle_fuel_type,
       } : null,
+      // Preserve raw vehicle for cart/add operations
+      _rawVehicle: vehicleData || null,
       totalArticles: articles.length,
       articles,
     };
+  }
+
+  // ==================== STEP 6: ERP-SYNC (PRICES + AVAILABILITY) ====================
+
+  /**
+   * STEP 6: Get prices and availability for articles via ERP-Sync
+   * Uses the 2-step approach: stock first, then prices+availability
+   *
+   * @param articles - Array of articles from searchArticles (need idPim, stock, totalAxStock, deliverableStocks)
+   * @returns Map of idPim -> { price, availabilities, stock, totalAxStock, deliverableStocks }
+   */
+  async getArticlePrices(articles: {
+    idPim: string;
+    salesQuantity?: number;
+    stock?: any;
+    totalAxStock?: number;
+    deliverableStocks?: any[];
+  }[]): Promise<Record<string, any>> {
+    this.logger.log(`💰 STEP 6: ERP-Sync for ${articles.length} articles...`);
+
+    if (!articles.length) return {};
+
+    // Single call: get stock + prices + availability at once
+    const result = await this.apiCall('POST', this.config.erpSyncUrl, {
+      articleInformationRequestItems: articles.map(a => ({
+        idPim: a.idPim,
+        quantity: a.salesQuantity || 1,
+        stock: null,
+        totalAxStock: 0,
+        deliverableStocks: [],
+      })),
+      numberOfRequestedItems: articles.length,
+      erpInfoRequest: {
+        stockRequested: true,
+        availabilityRequested: true,
+        priceRequested: true,
+      },
+    });
+
+    const items = result.items || {};
+    this.logger.log(`✅ Prices returned for ${Object.keys(items).length} articles`);
+
+    return items;
+  }
+
+  // ==================== STEP 7-9: CART OPERATIONS ====================
+
+  /**
+   * STEP 7: Add an article to the Derendinger shopping cart.
+   *
+   * Derendinger requires the FULL raw article object from search results
+   * (with ERP-synced price/stock/availabilities merged in), plus the full
+   * raw vehicle object. Sending a stripped-down version returns 500.
+   *
+   * @param rawArticle  - The complete raw article object (_rawArticle from search results)
+   * @param rawCategory - Category info { gaId, gaDesc, rootDesc } (_rawCategory from search results)
+   * @param rawVehicle  - The complete raw vehicle object (_rawVehicle from search results)
+   * @param quantity    - Number of items to add (default 1)
+   */
+  async addToCart(
+    rawArticle: any,
+    rawCategory: any,
+    rawVehicle: any,
+    quantity?: number,
+  ): Promise<any> {
+    const brand = rawArticle?.product_brand || rawArticle?.brand || '';
+    const artNr = rawArticle?.artnr_display || rawArticle?.artnr || '';
+    this.logger.log(`🛒 STEP 7: Adding to cart: ${brand} ${artNr}`);
+
+    const payload = {
+      category: {
+        gaId: rawCategory?.gaId || '',
+        gaDesc: rawCategory?.gaDesc || '',
+        rootDesc: rawCategory?.rootDesc || '',
+      },
+      article: rawArticle,
+      vehicle: rawVehicle || null,
+      quantity: quantity || rawArticle?.salesQuantity || 1,
+      basketItemSourceId: '',
+      basketItemSourceDesc: '',
+    };
+
+    const result = await this.apiCall(
+      'POST',
+      `${this.config.cartAddUrl}?shopType=DEFAULT_SHOPPING_CART`,
+      payload,
+    );
+
+    this.logger.log(`✅ Cart items: ${result.numberOfItems || result.items?.length || 0}`);
+    return result;
+  }
+
+  /**
+   * STEP 8: View the Derendinger shopping cart
+   */
+  async viewCart(): Promise<any> {
+    this.logger.log('🛒 STEP 8: Viewing cart...');
+
+    const result = await this.apiCall(
+      'GET',
+      `${this.config.cartViewUrl}?shopType=DEFAULT_SHOPPING_CART`,
+    );
+
+    this.logger.log(`✅ Cart: ${result.numberOfItems || result.items?.length || 0} items`);
+    return result;
+  }
+
+  /**
+   * STEP 9: Remove items from the Derendinger shopping cart
+   */
+  async removeFromCart(cartKeys: string[]): Promise<any> {
+    this.logger.log(`🗑️ STEP 9: Removing ${cartKeys.length} items from cart...`);
+
+    const result = await this.apiCall(
+      'POST',
+      `${this.config.cartRemoveUrl}?shopType=DEFAULT_SHOPPING_CART`,
+      {
+        cartKeys,
+        reloadAvail: true,
+        isRemoveItemInShoppingBasket: true,
+      },
+    );
+
+    this.logger.log(`✅ Remaining items: ${result.numberOfItems || result.items?.length || 0}`);
+    return result;
+  }
+
+  // ==================== STEP 10: ORDER PLACEMENT ====================
+
+  /**
+   * STEP 10a: Get the shopping basket context (order conditions)
+   * Returns payment, delivery, invoice settings from the Derendinger account.
+   * Calls context/init first to ensure context is populated.
+   */
+  async getOrderContext(): Promise<any> {
+    this.logger.log('📋 Getting order context...');
+
+    // Initialize context first (required before context data is available)
+    try {
+      await this.apiCall(
+        'POST',
+        `${this.config.baseUrl}/rest-ch-ax/context/init`,
+        {},
+      );
+    } catch {
+      this.logger.warn('⚠️ Context init call failed, continuing...');
+    }
+
+    const context = await this.apiCall('GET', this.config.contextUrl);
+
+    // Parse eshopBasketContext (may be string or object)
+    let basketCtx = context.eshopBasketContext;
+    if (typeof basketCtx === 'string') {
+      try {
+        basketCtx = JSON.parse(basketCtx);
+      } catch {
+        basketCtx = null;
+      }
+    }
+
+    // If context is not available, return defaults based on account settings
+    if (!basketCtx || !basketCtx.deliveryType) {
+      this.logger.log(
+        '📋 Using default order context (context API returned empty)',
+      );
+      return {
+        invoiceType: { descCode: 'WEEKLY_INVOICE' },
+        paymentMethod: { descCode: 'CREDIT' },
+        deliveryType: { descCode: 'PICKUP' },
+        collectionDelivery: { descCode: 'COLLECTIVE_DELIVERY1' },
+        pickupBranch: { branchId: '2501' },
+        billingAddress: null,
+        deliveryAddress: null,
+      };
+    }
+
+    this.logger.log(
+      `✅ Context: ${basketCtx.deliveryType?.descCode}, ${basketCtx.paymentMethod?.descCode}, branch ${basketCtx.pickupBranch?.branchId}`,
+    );
+    return basketCtx;
+  }
+
+  /**
+   * STEP 10b: Place an order with everything currently in the cart
+   *
+   * Flow: items must already be in cart (via addToCart).
+   * This method:
+   * 1. Gets the cart to find cartKeys
+   * 2. Gets the order context (payment/delivery settings)
+   * 3. Calls order/v2/create
+   *
+   * @param options.reference - Reference text shown on invoice/delivery note (max 60 chars)
+   * @param options.message - Message to branch (max 200 chars, triggers manual review)
+   */
+  async createOrder(options?: {
+    reference?: string;
+    message?: string;
+  }): Promise<{
+    success: boolean;
+    orderNumber?: string;
+    deliveryType?: string;
+    orders?: any[];
+    error?: string;
+  }> {
+    this.logger.log('🛒 STEP 10: Placing order...');
+
+    try {
+      // 1. Verify cart has items before ordering
+      const cart = await this.viewCart();
+      const items = cart.items || [];
+
+      if (items.length === 0) {
+        return { success: false, error: 'Cart is empty - add items before ordering' };
+      }
+
+      this.logger.log(`   Cart has ${items.length} items`);
+
+      // 2. Get order context (payment/delivery/invoice settings)
+      const ctx = await this.getOrderContext();
+
+      // 3. Build order condition from context
+      const orderCondition: any = {
+        invoiceTypeCode: ctx.invoiceType?.descCode || 'WEEKLY_INVOICE',
+        paymentMethod: ctx.paymentMethod?.descCode || 'CREDIT',
+        deliveryTypeCode: ctx.deliveryType?.descCode || 'PICKUP',
+        collectiveDeliveryCode:
+          ctx.collectionDelivery?.descCode || 'COLLECTIVE_DELIVERY1',
+        pickupBranchId: ctx.pickupBranch?.branchId || '2501',
+        billingAddressId: ctx.billingAddress?.addressId || '000838677',
+        deliveryAddressId: ctx.deliveryAddress?.addressId || '000838677',
+      };
+
+      // 4. Build order request — items must be empty array,
+      // the server uses items already in the cart
+      const now = new Date();
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const requestDateTime = `${pad(now.getDate())}.${pad(now.getMonth() + 1)}.${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+
+      const orderRequest = {
+        orderCondition,
+        timezone: 'Europe/Zurich',
+        customerRefText: (options?.reference || '').substring(0, 60),
+        message: (options?.message || '').substring(0, 200),
+        personalNumber: '',
+        finalCustomer: null,
+        finalCustomerOrderId: null,
+        items: [],
+        requestDateTime,
+        nonAvailablePromotionMessages: [],
+      };
+
+      this.logger.log(
+        `   Order: ${items.length} cart items, delivery=${orderCondition.deliveryTypeCode}, payment=${orderCondition.paymentMethod}`,
+      );
+      this.logger.log(`   Order payload: ${JSON.stringify(orderRequest)}`);
+
+      // 4. Place the order
+      const result = await this.apiCall(
+        'POST',
+        `${this.config.orderCreateUrl}?shopType=DEFAULT_SHOPPING_CART&ksoDisabled=false`,
+        orderRequest,
+      );
+
+      // Parse response — API returns an array of order objects directly
+      // Each object has: orderNr, orderType, subTotalWithNet, vatTotalWithNet, cartKeys, etc.
+      const orders = Array.isArray(result) ? result : (result.orders || [result]);
+      const orderNumbers: string[] = [];
+
+      for (const order of orders) {
+        if (order.orderNr || order.orderNumber) {
+          orderNumbers.push(order.orderNr || order.orderNumber);
+        }
+      }
+
+      this.logger.log(
+        `✅ Order placed! Numbers: ${orderNumbers.length > 0 ? orderNumbers.join(', ') : JSON.stringify(result).substring(0, 200)}`,
+      );
+
+      return {
+        success: true,
+        orderNumber: orderNumbers[0] || undefined,
+        deliveryType: orderCondition.deliveryTypeCode,
+        orders: Array.isArray(orders) ? orders : [result],
+      };
+    } catch (error) {
+      this.logger.error(`❌ Order failed: ${error.message}`);
+      return { success: false, error: error.message };
+    }
   }
 
   /**

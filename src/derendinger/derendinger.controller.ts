@@ -61,6 +61,7 @@ export class DerendingerController {
       partCodes?: { partCode: string; functionalGroup?: string; name?: string }[];
       serviceType?: string;
       estimateId?: string;
+      includePrices?: boolean;
     },
   ) {
     const result = await this.derendingerService.searchArticles({
@@ -68,6 +69,7 @@ export class DerendingerController {
       partCodes: body.partCodes,
       serviceType: body.serviceType,
       estimateId: body.estimateId,
+      includePrices: body.includePrices,
     });
 
     return {
@@ -161,6 +163,158 @@ export class DerendingerController {
         error: error.message,
       };
     }
+  }
+
+  // ==================== PRICING ENDPOINTS ====================
+
+  /**
+   * Get prices for specific articles by their PIM IDs
+   * POST /derendinger/articles/prices
+   *
+   * Body: {
+   *   articles: [{
+   *     idPim: string,
+   *     salesQuantity?: number,
+   *     stock?: any,
+   *     totalAxStock?: number,
+   *     deliverableStocks?: any[]
+   *   }]
+   * }
+   */
+  @Post('articles/prices')
+  @UseGuards(JwtAuthGuard)
+  async getArticlePrices(
+    @Body() body: {
+      articles: {
+        idPim: string;
+        salesQuantity?: number;
+        stock?: any;
+        totalAxStock?: number;
+        deliverableStocks?: any[];
+      }[];
+    },
+  ) {
+    const prices = await this.derendingerService.getArticlePrices(body.articles);
+    return {
+      success: true,
+      data: prices,
+    };
+  }
+
+  // ==================== CART ENDPOINTS ====================
+
+  /**
+   * Add article to Derendinger cart
+   * POST /derendinger/cart/add
+   *
+   * Requires the full raw article data from search results (with ERP prices merged).
+   * The Derendinger API rejects stripped-down payloads.
+   *
+   * Body: {
+   *   rawArticle: object,    // Full _rawArticle from articles/search response
+   *   rawCategory: object,   // Full _rawCategory from articles/search response
+   *   rawVehicle?: object,   // Full _rawVehicle from articles/search response
+   *   quantity?: number       // Quantity to add (default 1)
+   * }
+   */
+  @Post('cart/add')
+  @UseGuards(JwtAuthGuard)
+  async addToCart(
+    @Body() body: {
+      rawArticle: any;
+      rawCategory: any;
+      rawVehicle?: any;
+      quantity?: number;
+    },
+  ) {
+    const result = await this.derendingerService.addToCart(
+      body.rawArticle,
+      body.rawCategory,
+      body.rawVehicle,
+      body.quantity,
+    );
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  /**
+   * View Derendinger shopping cart
+   * GET /derendinger/cart
+   */
+  @Get('cart')
+  @UseGuards(JwtAuthGuard)
+  async viewCart() {
+    const result = await this.derendingerService.viewCart();
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  /**
+   * Remove items from Derendinger cart
+   * POST /derendinger/cart/remove
+   *
+   * Body: { cartKeys: string[] }
+   */
+  @Post('cart/remove')
+  @UseGuards(JwtAuthGuard)
+  async removeFromCart(@Body() body: { cartKeys: string[] }) {
+    const result = await this.derendingerService.removeFromCart(body.cartKeys);
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  // ==================== ORDER PLACEMENT ====================
+
+  /**
+   * Place an order for all items currently in the Derendinger cart
+   * POST /derendinger/order/place
+   *
+   * Body: {
+   *   reference?: string,    // Reference text for invoice/delivery note (max 60 chars)
+   *   message?: string       // Message to branch (max 200 chars, triggers manual review)
+   * }
+   *
+   * Items must already be in the cart (via POST /derendinger/cart/add).
+   * Uses the account's default payment/delivery settings.
+   */
+  @Post('order/place')
+  @UseGuards(JwtAuthGuard)
+  async placeOrder(
+    @Body() body: { reference?: string; message?: string },
+  ) {
+    const result = await this.derendingerService.createOrder({
+      reference: body.reference,
+      message: body.message,
+    });
+    return result;
+  }
+
+  /**
+   * Get the current order context (payment/delivery/invoice settings)
+   * GET /derendinger/order/context
+   */
+  @Get('order/context')
+  @UseGuards(JwtAuthGuard)
+  async getOrderContext() {
+    const context = await this.derendingerService.getOrderContext();
+    return {
+      success: true,
+      data: {
+        invoiceType: context.invoiceType,
+        paymentMethod: context.paymentMethod,
+        deliveryType: context.deliveryType,
+        collectionDelivery: context.collectionDelivery,
+        pickupBranch: context.pickupBranch,
+        billingAddress: context.billingAddress,
+        deliveryAddress: context.deliveryAddress,
+      },
+    };
   }
 
   // ==================== DMS INTERFACE ENDPOINTS ====================
